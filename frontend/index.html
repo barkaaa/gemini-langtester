@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LINGUA_METRIC_PRO — Japanese Reading Adaptive Assessment</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;800;900&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        "on-background": "#191c1d",
+        "surface-container-high": "#e7e8e9",
+        "surface-variant": "#e1e3e4",
+        "outline-variant": "#c2c6d6",
+        "primary": "#0058be",
+        "secondary-fixed": "#ffddb8",
+        "surface-container-lowest": "#ffffff",
+        "inverse-primary": "#adc6ff",
+        "tertiary-container": "#da3437",
+        "on-primary-container": "#fefcff",
+        "background": "#f8f9fa",
+        "primary-container": "#2170e4",
+        "secondary-container": "#fea619",
+        "on-surface-variant": "#424754",
+        "error-container": "#ffdad6",
+        "secondary": "#855300",
+        "error": "#ba1a1a",
+        "surface-container-low": "#f3f4f5",
+        "surface-container": "#edeeef",
+        "primary-fixed-dim": "#adc6ff",
+        "surface-container-highest": "#e1e3e4",
+        "primary-fixed": "#d8e2ff",
+        "surface": "#f8f9fa",
+        "surface-bright": "#f8f9fa",
+        "on-primary-fixed": "#001a42",
+        "on-secondary": "#ffffff",
+        "inverse-surface": "#2e3132",
+        "on-tertiary-container": "#fffbff",
+        "on-primary": "#ffffff",
+        "on-surface": "#191c1d",
+        "on-secondary-container": "#684000",
+        "tertiary": "#b61722",
+        "surface-dim": "#d9dadb",
+        "outline": "#727785",
+        "on-error": "#ffffff",
+        "inverse-on-surface": "#f0f1f2",
+        "on-tertiary": "#ffffff",
+        "success": "#1a7a3a",
+        "success-container": "#d4edda",
+      },
+      borderRadius: {
+        DEFAULT: "0.25rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        full: "9999px",
+      },
+      spacing: {
+        unit: "8px",
+        "container-max": "1440px",
+        "margin-desktop": "40px",
+        "margin-mobile": "16px",
+        "stack-sm": "8px",
+        gutter: "24px",
+        "stack-lg": "32px",
+        "stack-md": "16px",
+      },
+      fontFamily: {
+        jp: ["Noto Sans JP", "sans-serif"],
+        mono: ["Plus Jakarta Sans", "sans-serif"],
+      },
+    },
+  },
+}
+</script>
+<style>
+  body { font-family: "Noto Sans JP", sans-serif; }
+  .data-mono { font-family: "Plus Jakarta Sans", sans-serif; }
+  .ms { font-family: "Material Symbols Outlined"; font-variation-settings: "FILL" 1; }
+  .page { display: none; }
+  .page.active { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* Ability gauge animation */
+  .gauge-fill { transition: height 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+
+  /* Option transition */
+  .opt-btn { transition: all 0.15s ease; }
+
+  /* Dot pulse */
+  @keyframes dotPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,88,190,0.4); }
+    50%       { box-shadow: 0 0 0 6px transparent; }
+  }
+  .dot-current { animation: dotPulse 1.4s infinite; }
+
+  /* Spinner */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { animation: spin 0.7s linear infinite; }
+
+  .dashboard-bg {
+    background-color: #f8f9fa;
+    background-image: radial-gradient(#e1e3e4 1px, transparent 1px),
+                      radial-gradient(#e1e3e4 1px, transparent 1px);
+    background-position: 0 0, 20px 20px;
+    background-size: 40px 40px;
+  }
+</style>
+</head>
+<body class="bg-background text-on-background antialiased">
+
+<!-- ════════════════════════════════════════════════════════════
+     PAGE 1: START
+════════════════════════════════════════════════════════════ -->
+<div id="page-start" class="page active dashboard-bg">
+  <header class="bg-surface border-b border-outline-variant">
+    <div class="flex justify-between items-center px-4 md:px-10 w-full h-16 md:h-20 max-w-screen-xl mx-auto">
+      <div class="font-black text-xl md:text-2xl text-primary flex items-center gap-2">
+        <span class="ms text-2xl">psychology</span>
+        <span class="hidden sm:inline">LINGUA_METRIC_PRO</span>
+        <span class="sm:hidden">LMP</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-on-surface-variant text-sm hidden md:inline">Session ID: JP-294X</span>
+        <button class="bg-surface-container-highest text-on-surface px-3 py-1.5 rounded text-xs font-semibold hover:bg-surface-variant transition-colors">End Session</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-grow flex items-center justify-center p-4 md:p-10 relative z-10 my-8">
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm w-full max-w-2xl p-8 md:p-16 text-center flex flex-col items-center gap-8">
+      <div class="flex flex-col gap-3 items-center">
+        <div class="bg-primary-fixed text-on-primary-fixed px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-2">
+          <span class="ms text-base">science</span> DEMO ENVIRONMENT
+        </div>
+        <h1 class="text-3xl md:text-5xl font-black text-on-background leading-tight">
+          Japanese Reading<br>Adaptive Assessment
+        </h1>
+        <p class="text-base md:text-lg text-on-surface-variant max-w-lg mt-2">
+          Advanced adaptive engine. Real-time comparison of AI self-rating vs. objective engine measurement. JLPT N1–N5.
+        </p>
+      </div>
+
+      <div class="w-full max-w-lg flex flex-col gap-3 text-left">
+        <label class="text-xs font-semibold tracking-widest text-on-surface uppercase" for="user-input">
+          Assessment Parameters (Natural Language)
+        </label>
+        <div class="relative w-full">
+          <span class="ms absolute left-4 top-1/2 -translate-y-1/2 text-outline text-xl">tune</span>
+          <input
+            id="user-input"
+            type="text"
+            placeholder='e.g., Test my Japanese reading, around N3'
+            autocomplete="off"
+            class="w-full bg-surface-container-lowest border-2 border-outline-variant focus:border-primary rounded-lg pl-12 pr-4 py-3 text-base text-on-surface placeholder:text-outline transition-colors outline-none h-14"
+          />
+        </div>
+        <div class="flex gap-2 flex-wrap mt-1 justify-center">
+          <button onclick="setInput('N1 level, advanced reading')"
+            class="bg-surface-container text-on-surface-variant text-xs px-3 py-1 rounded-full hover:bg-surface-variant transition-colors">"N1 Intensive"</button>
+          <button onclick="setInput('N3 intermediate, inference focus')"
+            class="bg-surface-container text-on-surface-variant text-xs px-3 py-1 rounded-full hover:bg-surface-variant transition-colors">"N3 Intermediate"</button>
+          <button onclick="setInput('N4 basic reading comprehension')"
+            class="bg-surface-container text-on-surface-variant text-xs px-3 py-1 rounded-full hover:bg-surface-variant transition-colors">"N4 Basic"</button>
+        </div>
+      </div>
+
+      <div class="w-full max-w-lg flex flex-col gap-3">
+        <button id="start-btn" onclick="startSession()"
+          class="w-full h-14 bg-primary text-on-primary text-lg font-bold rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-sm">
+          <span id="start-label">Start Assessment</span>
+          <span class="ms text-xl" id="start-icon">arrow_forward</span>
+          <div id="start-spinner" class="hidden w-5 h-5 border-2 border-white/40 border-t-white rounded-full spinner"></div>
+        </button>
+        <p class="text-center text-sm text-outline">
+          Engine ready · Adaptive calibration across 5–8 questions
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <div class="fixed bottom-0 right-0 w-1/3 h-1/2 bg-gradient-to-tl from-primary-fixed-dim/20 to-transparent pointer-events-none -z-10 rounded-tl-full blur-3xl"></div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     PAGE 2: QUIZ
+════════════════════════════════════════════════════════════ -->
+<div id="page-quiz" class="page">
+  <!-- Nav -->
+  <nav class="bg-surface border-b border-outline-variant z-50 shrink-0">
+    <div class="flex justify-between items-center px-4 md:px-10 w-full h-16 max-w-screen-xl mx-auto">
+      <div class="font-black text-xl text-primary flex items-center gap-2">
+        <span class="ms text-2xl">analytics</span>
+        <span class="hidden sm:inline">LINGUA_METRIC_PRO</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="flex gap-1.5 items-center" id="progress-dots"></div>
+        <div id="quiz-spinner" class="hidden w-5 h-5 border-2 border-outline border-t-primary rounded-full spinner"></div>
+      </div>
+      <button onclick="restart()" class="px-3 py-2 bg-surface-container-high text-on-surface text-xs font-semibold rounded hover:bg-surface-variant transition-colors flex items-center gap-1">
+        <span class="ms text-base">close</span>
+        <span class="hidden sm:inline">End Session</span>
+      </button>
+    </div>
+  </nav>
+
+  <main class="flex-grow w-full max-w-screen-xl mx-auto px-4 md:px-10 py-6 flex flex-col md:flex-row gap-6">
+
+    <!-- Left: Ability gauge -->
+    <aside class="w-full md:w-24 shrink-0 flex md:flex-col items-center justify-between bg-surface-container-lowest rounded-xl border border-surface-container-high p-4 h-auto md:h-[560px] relative order-2 md:order-1">
+      <div class="text-center text-xs font-semibold tracking-widest text-on-surface-variant mb-0 md:mb-3">LEVEL<br class="hidden md:block">GAUGE</div>
+
+      <div class="flex md:flex-col items-center justify-between w-full h-full relative px-2 md:px-0 py-0 md:py-2 overflow-hidden min-h-[40px] md:min-h-0">
+        <!-- Track -->
+        <div class="absolute left-1/2 md:left-1/2 top-0 md:top-0 -translate-x-1/2 w-2 h-full bg-surface-container-high rounded-full z-0"></div>
+        <!-- Fill -->
+        <div id="gauge-fill" class="absolute left-1/2 -translate-x-1/2 bottom-0 w-2 bg-primary rounded-full z-10 gauge-fill" style="height:20%"></div>
+        <!-- Labels -->
+        <div class="relative z-20 flex flex-col justify-between items-center w-full h-full gap-0">
+          <div id="gauge-n1" class="w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-bold data-mono border-outline-variant text-outline bg-surface-container-lowest transition-all">N1</div>
+          <div id="gauge-n2" class="w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-bold data-mono border-outline-variant text-outline bg-surface-container-lowest transition-all">N2</div>
+          <div id="gauge-n3" class="w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-bold data-mono border-primary text-primary bg-primary-fixed transition-all">N3</div>
+          <div id="gauge-n4" class="w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-bold data-mono border-outline-variant text-outline bg-surface-container-lowest transition-all">N4</div>
+          <div id="gauge-n5" class="w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-bold data-mono border-outline-variant text-outline bg-surface-container-lowest transition-all">N5</div>
+        </div>
+      </div>
+
+      <div class="mt-0 md:mt-3 text-center">
+        <span class="ms text-primary text-2xl">target</span>
+      </div>
+    </aside>
+
+    <!-- Center: Question content -->
+    <section class="flex-grow flex flex-col gap-5 max-w-3xl order-1 md:order-2">
+
+      <!-- Difficulty dual badge -->
+      <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-surface-container-lowest p-5 rounded-xl border border-surface-container-high">
+        <div>
+          <h2 class="text-xl md:text-2xl font-bold text-on-surface">Reading Comprehension</h2>
+          <p class="text-sm text-on-surface-variant mt-0.5" id="q-type-label">Select the most appropriate interpretation.</p>
+        </div>
+
+        <!-- The core selling point: self vs measured -->
+        <div class="flex bg-surface-container rounded-lg p-1 w-full sm:w-auto shrink-0">
+          <div class="flex-1 sm:flex-none px-4 py-2 flex flex-col items-center">
+            <span class="text-xs tracking-wider text-on-surface-variant mb-1 font-semibold">AI Self-Rating</span>
+            <div class="data-mono text-xl font-black text-on-surface" id="badge-self">N3</div>
+            <div class="text-xs text-on-surface-variant" id="badge-self-sub">L6</div>
+          </div>
+          <div class="w-px bg-outline-variant my-2 mx-1"></div>
+          <div class="flex-1 sm:flex-none px-4 py-2 flex flex-col items-center bg-primary rounded shadow-sm relative" id="badge-measured-wrap">
+            <span class="text-xs tracking-wider text-on-primary mb-1 font-semibold flex items-center gap-1">
+              <span class="ms text-sm">auto_awesome</span> Engine Measured
+            </span>
+            <div class="data-mono text-xl font-black text-on-primary" id="badge-measured">N3</div>
+            <div class="text-xs text-on-primary/70" id="badge-measured-sub">L6</div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Mismatch alert -->
+      <div id="mismatch-alert" class="hidden items-center gap-2 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 text-amber-800 text-sm font-semibold">
+        <span class="ms text-amber-500 text-lg">warning</span>
+        AI self-rating and engine measurement diverge — difficulty corrected to engine value for scoring.
+      </div>
+
+      <!-- Feedback bar -->
+      <div id="feedback-bar" class="hidden items-center gap-3 px-5 py-3 rounded-xl border text-sm font-bold">
+        <span class="ms text-xl" id="feedback-icon">check_circle</span>
+        <span id="feedback-text">Correct!</span>
+      </div>
+
+      <!-- Passage + question card -->
+      <article class="bg-surface-container-lowest p-5 md:p-8 rounded-xl border border-surface-container-high relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-40 h-40 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl pointer-events-none"></div>
+        <div class="relative z-10">
+          <div class="flex items-center gap-2 mb-4">
+            <span id="q-num-tag" class="bg-surface-variant text-on-surface-variant text-xs font-semibold px-2 py-1 rounded">Q1</span>
+            <span id="q-type-tag" class="text-xs font-semibold px-2 py-1 rounded border border-primary/40 text-primary">detail</span>
+          </div>
+
+          <p id="passage" class="text-base md:text-lg text-on-surface leading-loose tracking-wide font-jp mb-6 pb-6 border-b border-surface-container-high whitespace-pre-wrap"></p>
+
+          <h3 id="question-text" class="text-lg md:text-xl font-bold text-on-surface mb-5 font-jp flex items-start gap-3">
+            <span class="ms text-primary mt-0.5">help</span>
+            <span></span>
+          </h3>
+
+          <div class="flex flex-col gap-3" id="options"></div>
+        </div>
+      </article>
+
+      <!-- Next button -->
+      <div class="flex justify-end">
+        <button id="next-btn" onclick="loadNext()"
+          class="hidden h-12 px-8 bg-primary text-on-primary font-semibold rounded-xl hover:bg-primary-container transition-colors flex items-center gap-2">
+          Next Question <span class="ms">arrow_forward</span>
+        </button>
+      </div>
+    </section>
+  </main>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     PAGE 3: RESULTS
+════════════════════════════════════════════════════════════ -->
+<div id="page-result" class="page">
+  <nav class="bg-surface border-b border-outline-variant shrink-0">
+    <div class="flex justify-between items-center px-4 md:px-10 w-full h-16 md:h-20 max-w-screen-xl mx-auto">
+      <span class="font-black text-xl text-primary flex items-center gap-2">
+        <span class="ms text-2xl">analytics</span>
+        <span class="hidden sm:inline">LINGUA_METRIC_PRO</span>
+      </span>
+      <button onclick="restart()" class="px-4 py-2 border border-outline-variant text-on-surface text-sm font-semibold rounded-lg hover:bg-surface-variant transition-colors flex items-center gap-2">
+        <span class="ms text-base">replay</span> New Test
+      </button>
+    </div>
+  </nav>
+
+  <main class="flex-grow w-full max-w-screen-xl mx-auto px-4 md:px-10 py-8 overflow-y-auto flex flex-col gap-6">
+    <header>
+      <h1 class="text-3xl md:text-5xl font-black text-on-background">Reading Profile</h1>
+      <p class="text-base text-on-surface-variant mt-1">Session completion report and adaptive metrics analysis.</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <!-- Primary metric -->
+      <div class="col-span-1 lg:col-span-8 bg-surface-container-lowest border border-primary/30 rounded-xl p-8 flex flex-col justify-center items-center relative overflow-hidden min-h-[240px]">
+        <div class="absolute top-4 left-4 flex items-center gap-2">
+          <span class="ms text-primary text-lg">verified</span>
+          <span class="text-xs font-bold tracking-widest text-primary uppercase">Objective Measurement</span>
+        </div>
+        <div class="text-center mt-4 z-10 w-full">
+          <p class="text-base text-on-surface-variant mb-2">Difficulty Ceiling</p>
+          <h2 class="data-mono text-6xl md:text-8xl font-black text-primary leading-none mb-3" id="res-ceiling">N2 / L7</h2>
+          <p class="text-sm text-on-surface-variant" id="res-confidence">Engine confidence: high · 8 questions completed</p>
+        </div>
+      </div>
+
+      <!-- Secondary metrics -->
+      <div class="col-span-1 lg:col-span-4 flex flex-col gap-4">
+        <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <div class="text-xs font-semibold tracking-widest text-on-surface-variant mb-1 uppercase">Reading Precision</div>
+            <div class="data-mono text-3xl font-black text-on-background" id="res-accuracy">—</div>
+          </div>
+          <div class="w-12 h-12 rounded-full border-4 border-primary flex items-center justify-center shrink-0">
+            <span class="ms text-primary text-2xl">check_circle</span>
+          </div>
+        </div>
+
+        <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <div class="text-xs font-semibold tracking-widest text-on-surface-variant mb-1 uppercase">Reading Speed</div>
+            <div class="flex items-baseline gap-1">
+              <span class="data-mono text-3xl font-black text-on-background" id="res-speed">—</span>
+              <span class="text-sm text-on-surface-variant" id="res-speed-unit"></span>
+            </div>
+          </div>
+          <div class="w-12 h-12 rounded-full border-4 border-secondary-container flex items-center justify-center shrink-0">
+            <span class="ms text-secondary-container text-2xl">speed</span>
+          </div>
+        </div>
+
+        <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <div class="text-xs font-semibold tracking-widest text-on-surface-variant mb-1 uppercase">Reader Type</div>
+            <div class="text-xl font-bold text-on-background font-jp" id="res-reader-type">—</div>
+          </div>
+          <span class="ms text-on-surface-variant text-3xl shrink-0">person_search</span>
+        </div>
+
+        <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 flex flex-col gap-2 bg-error-container/10">
+          <div class="text-xs font-semibold tracking-widest text-tertiary uppercase flex items-center gap-2">
+            <span class="ms text-tertiary text-sm">warning</span> Weak Areas
+          </div>
+          <div class="flex flex-wrap gap-2 mt-1" id="res-weak-areas"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Radar chart -->
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-6 flex justify-center">
+      <canvas id="radar-canvas" width="380" height="380" style="max-width:380px;max-height:380px"></canvas>
+    </div>
+
+    <!-- Study advice -->
+    <div class="bg-surface-container-low border border-outline-variant rounded-xl p-6">
+      <h3 class="text-xl font-bold text-on-background mb-4 flex items-center gap-2">
+        <span class="ms text-primary text-2xl">lightbulb</span> Study Advice
+      </h3>
+      <p class="text-base text-on-surface-variant leading-relaxed font-jp" id="res-advice">—</p>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-col sm:flex-row gap-4 pt-4 border-t border-outline-variant">
+      <button onclick="restart()"
+        class="flex-1 h-14 bg-primary text-on-primary font-bold text-lg rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+        New Assessment <span class="ms">arrow_forward</span>
+      </button>
+      <button onclick="restart()"
+        class="flex-1 h-14 bg-surface-container-highest text-on-surface font-semibold rounded-lg hover:bg-surface-variant transition-colors flex items-center justify-center gap-2 border border-outline-variant">
+        <span class="ms">replay</span> Return to Start
+      </button>
+    </div>
+  </main>
+</div>
+
+<!-- Error toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-50 border border-error text-error px-5 py-3 rounded-xl text-sm font-semibold shadow-lg hidden z-50 max-w-sm text-center"></div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     JavaScript
+══════════════════════════════════════════════════════════ -->
+<script>
+// ── State ────────────────────────────────────────────────────────────────
+const S = {
+  sessionId: null,
+  pendingNext: null,
+  startMs: null,
+  abilityLevel: 5,
+  abilityJlpt: 'N3',
+  answered: 0,
+  localHistory: [],   // { correct, question_type }
+  awaitingNext: false,
+};
+
+// ── Routing ───────────────────────────────────────────────────────────────
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const el = document.getElementById(id);
+  el.classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+// ── Toasts ────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 4000);
+}
+
+// ── Spinner ───────────────────────────────────────────────────────────────
+function spin(id, on) {
+  document.getElementById(id).classList.toggle('hidden', !on);
+}
+
+// ── Input chip helper ─────────────────────────────────────────────────────
+function setInput(text) {
+  document.getElementById('user-input').value = text;
+  document.getElementById('user-input').focus();
+}
+
+// ── Ability gauge ─────────────────────────────────────────────────────────
+const GAUGE_ORDER = ['N1','N2','N3','N4','N5'];
+function setAbility(level, jlpt) {
+  S.abilityLevel = level;
+  S.abilityJlpt  = jlpt || 'N3';
+  // Fill: N5=bottom → N1=top. level 1-10 → percent bottom to top.
+  const pct = ((level - 1) / 9 * 100).toFixed(1);
+  document.getElementById('gauge-fill').style.height = pct + '%';
+
+  // Highlight active level node
+  GAUGE_ORDER.forEach(n => {
+    const el = document.getElementById('gauge-' + n.toLowerCase());
+    if (!el) return;
+    if (n === jlpt) {
+      el.className = 'w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-bold data-mono border-primary text-primary bg-primary-fixed transition-all';
+    } else {
+      el.className = 'w-9 h-9 rounded-full border-2 flex items-center justify-center text-xs font-bold data-mono border-outline-variant text-outline bg-surface-container-lowest transition-all';
+    }
+  });
+}
+
+// ── Difficulty badges ─────────────────────────────────────────────────────
+function updateDiffBadges(diff) {
+  if (!diff) return;
+  document.getElementById('badge-self').textContent     = diff.self_jlpt  || '—';
+  document.getElementById('badge-self-sub').textContent = `L${diff.self_level || '?'}`;
+  document.getElementById('badge-measured').textContent     = diff.measured_jlpt  || '—';
+  document.getElementById('badge-measured-sub').textContent = `L${diff.measured_level || '?'}`;
+
+  const mismatch = diff.self_jlpt !== diff.measured_jlpt ||
+    Math.abs((diff.self_level || 0) - (diff.measured_level || 0)) >= 2;
+  const el = document.getElementById('mismatch-alert');
+  el.classList.toggle('hidden', !mismatch);
+  el.classList.toggle('flex', mismatch);
+}
+
+// ── Progress dots ─────────────────────────────────────────────────────────
+function initDots() {
+  const c = document.getElementById('progress-dots');
+  c.innerHTML = '';
+  addCurrentDot(c);
+}
+function addCurrentDot(c) {
+  const d = document.createElement('div');
+  d.className = 'w-2.5 h-2.5 rounded-full bg-primary dot-current';
+  c.appendChild(d);
+}
+function commitDot(correct) {
+  const c = document.getElementById('progress-dots');
+  const cur = c.querySelector('.dot-current');
+  if (cur) {
+    cur.classList.remove('dot-current');
+    cur.className = 'w-2.5 h-2.5 rounded-full ' + (correct ? 'bg-success' : 'bg-error');
+  }
+  addCurrentDot(c);
+}
+
+// ── Render question ───────────────────────────────────────────────────────
+function renderQuestion(q, diff, qNum) {
+  S.startMs      = Date.now();
+  S.awaitingNext = false;
+
+  updateDiffBadges(diff);
+
+  const qType = S.localHistory.length % 2 === 0 ? 'detail' : 'inference';
+  document.getElementById('q-type-label').textContent =
+    qType === 'inference' ? 'Infer the author\'s intent or implication.' : 'Find the correct factual detail.';
+  document.getElementById('q-type-tag').textContent = qType;
+  document.getElementById('q-num-tag').textContent = `Q${qNum}`;
+
+  document.getElementById('passage').textContent = q.passage;
+
+  // Question text
+  const qSpan = document.querySelector('#question-text span:last-child');
+  qSpan.textContent = q.question;
+
+  // Options
+  const optCont = document.getElementById('options');
+  optCont.innerHTML = '';
+  const letters = ['A','B','C','D'];
+  q.options.forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'opt-btn w-full text-left p-4 md:p-5 rounded-xl border-2 border-surface-container-high bg-surface hover:border-primary hover:bg-blue-50 flex items-start gap-3';
+    btn.innerHTML = `
+      <div class="opt-letter w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-sm font-bold data-mono text-on-surface shrink-0 mt-0.5 transition-all">${letters[i]}</div>
+      <span class="text-sm md:text-base text-on-surface font-jp">${opt}</span>
+    `;
+    btn.onclick = () => selectOption(i);
+    optCont.appendChild(btn);
+  });
+
+  // Hide feedback & next
+  const fb = document.getElementById('feedback-bar');
+  fb.classList.add('hidden'); fb.classList.remove('flex');
+  document.getElementById('next-btn').classList.add('hidden');
+  spin('quiz-spinner', false);
+}
+
+// ── Option selection ──────────────────────────────────────────────────────
+async function selectOption(idx) {
+  if (S.awaitingNext) return;
+  S.awaitingNext = true;
+  const elapsed = Date.now() - (S.startMs || Date.now());
+
+  // Disable all options
+  document.querySelectorAll('.opt-btn').forEach(b => { b.disabled = true; });
+  spin('quiz-spinner', true);
+
+  let data;
+  try {
+    const r = await fetch('/answer', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ session_id: S.sessionId, answer_index: idx, elapsed_ms: elapsed }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    data = await r.json();
+  } catch(e) {
+    spin('quiz-spinner', false);
+    toast('Network error: ' + e.message);
+    document.querySelectorAll('.opt-btn').forEach(b => { b.disabled = false; });
+    S.awaitingNext = false;
+    return;
+  }
+  spin('quiz-spinner', false);
+
+  const correct = data.correct;
+  const opts = document.querySelectorAll('.opt-btn');
+  const letters = ['A','B','C','D'];
+
+  // Colour the selected option
+  opts[idx].className = 'opt-btn w-full text-left p-4 md:p-5 rounded-xl border-2 flex items-start gap-3 ' +
+    (correct ? 'border-success bg-green-50' : 'border-error bg-red-50');
+  opts[idx].querySelector('.opt-letter').className =
+    'opt-letter w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold data-mono shrink-0 mt-0.5 transition-all ' +
+    (correct ? 'bg-success text-white' : 'bg-error text-white');
+
+  // Dim others
+  opts.forEach((b, i) => {
+    if (i !== idx) b.classList.add('opacity-40');
+  });
+
+  // Feedback bar
+  const fb = document.getElementById('feedback-bar');
+  fb.classList.remove('hidden'); fb.classList.add('flex');
+  if (correct) {
+    fb.className = 'flex items-center gap-3 px-5 py-3 rounded-xl border text-sm font-bold bg-green-50 border-success text-success';
+    document.getElementById('feedback-icon').textContent = 'check_circle';
+    document.getElementById('feedback-text').textContent = 'Correct!';
+  } else {
+    fb.className = 'flex items-center gap-3 px-5 py-3 rounded-xl border text-sm font-bold bg-red-50 border-error text-error';
+    document.getElementById('feedback-icon').textContent = 'cancel';
+    document.getElementById('feedback-text').textContent = 'Incorrect — engine difficulty correction applied.';
+  }
+
+  // Update gauge from diagnosis
+  if (data.diagnosis) {
+    const d = data.diagnosis;
+    setAbility(d.ability_level || S.abilityLevel, d.ability_jlpt || S.abilityJlpt);
+  }
+
+  commitDot(correct);
+  S.localHistory.push({ correct, question_type: document.getElementById('q-type-tag').textContent });
+  S.answered++;
+
+  if (data.done) {
+    setTimeout(() => showResults(data.diagnosis), 1400);
+    return;
+  }
+
+  S.pendingNext = { question: data.next_question, difficulty: data.difficulty };
+  document.getElementById('next-btn').classList.remove('hidden');
+  document.getElementById('next-btn').classList.add('flex');
+}
+
+function loadNext() {
+  if (!S.pendingNext) return;
+  const { question, difficulty } = S.pendingNext;
+  S.pendingNext = null;
+  renderQuestion(question, difficulty, S.answered + 1);
+}
+
+// ── Start session ─────────────────────────────────────────────────────────
+async function startSession() {
+  const input = document.getElementById('user-input').value.trim();
+  if (!input) return;
+
+  const btn = document.getElementById('start-btn');
+  btn.disabled = true;
+  document.getElementById('start-label').textContent = 'Initializing…';
+  document.getElementById('start-icon').classList.add('hidden');
+  spin('start-spinner', true);
+
+  let data;
+  try {
+    const r = await fetch('/start', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ user_input: input }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    data = await r.json();
+  } catch(e) {
+    spin('start-spinner', false);
+    btn.disabled = false;
+    document.getElementById('start-label').textContent = 'Start Assessment';
+    document.getElementById('start-icon').classList.remove('hidden');
+    toast('Error: ' + e.message);
+    return;
+  }
+
+  S.sessionId = data.session_id;
+  S.answered  = 0;
+  S.localHistory = [];
+
+  showPage('page-quiz');
+  initDots();
+  setAbility(5, 'N3');
+  renderQuestion(data.question, data.difficulty, 1);
+}
+
+// ── Results ───────────────────────────────────────────────────────────────
+let radarChart = null;
+
+function showResults(diag) {
+  showPage('page-result');
+
+  const level = diag.ability_level || 5;
+  const jlpt  = diag.ability_jlpt  || 'N3';
+  const conf  = diag.confidence    || 'medium';
+
+  document.getElementById('res-ceiling').textContent = `${jlpt} / L${level}`;
+  const confLabel = conf === 'high' ? 'High' : conf === 'medium' ? 'Medium' : 'Low';
+  document.getElementById('res-confidence').textContent =
+    `Engine confidence: ${confLabel.toLowerCase()} · ${S.answered} questions completed`;
+
+  const total    = S.localHistory.length;
+  const correctN = S.localHistory.filter(h => h.correct).length;
+  const accuracy = total ? Math.round(correctN / total * 100) : 0;
+  document.getElementById('res-accuracy').textContent = accuracy + '%';
+  document.getElementById('res-speed').textContent = '—';
+  document.getElementById('res-speed-unit').textContent = '';
+
+  document.getElementById('res-reader-type').textContent = diag.reader_type || '—';
+
+  // Weak areas chips
+  const weakEl = document.getElementById('res-weak-areas');
+  weakEl.innerHTML = '';
+  (diag.weak_areas || []).forEach(w => {
+    const c = document.createElement('span');
+    c.className = 'px-3 py-1 bg-surface-container text-on-surface text-sm rounded-full border border-outline-variant font-jp';
+    c.textContent = w;
+    weakEl.appendChild(c);
+  });
+
+  document.getElementById('res-advice').textContent = diag.advice || '—';
+
+  // Radar
+  const infH = S.localHistory.filter(h => h.question_type === 'inference');
+  const detH = S.localHistory.filter(h => h.question_type === 'detail');
+  const inferAcc = infH.length ? infH.filter(h=>h.correct).length / infH.length * 10 : 5;
+  const detailAcc = detH.length ? detH.filter(h=>h.correct).length / detH.length * 10 : 5;
+
+  const radarData = {
+    labels: ['Difficulty\nCeiling', 'Accuracy', 'Inference\nAbility', 'Detail\nGrasp', 'Confidence'],
+    datasets: [{
+      data: [level, accuracy/10, +inferAcc.toFixed(1), +detailAcc.toFixed(1),
+             conf === 'high' ? 9 : conf === 'medium' ? 6 : 3],
+      backgroundColor: 'rgba(0,88,190,0.12)',
+      borderColor: '#0058be',
+      borderWidth: 2.5,
+      pointBackgroundColor: '#0058be',
+      pointRadius: 5,
+    }],
+  };
+
+  if (radarChart) radarChart.destroy();
+  radarChart = new Chart(document.getElementById('radar-canvas'), {
+    type: 'radar',
+    data: radarData,
+    options: {
+      responsive: false,
+      scales: {
+        r: {
+          min: 0, max: 10,
+          ticks: { stepSize: 2, color: '#727785', font: { size: 10 } },
+          grid: { color: '#c2c6d6' },
+          angleLines: { color: '#c2c6d6' },
+          pointLabels: {
+            color: '#191c1d',
+            font: { size: 12, family: "'Noto Sans JP', sans-serif", weight: '700' },
+          },
+        },
+      },
+      plugins: { legend: { display: false } },
+    },
+  });
+}
+
+// ── Restart ───────────────────────────────────────────────────────────────
+function restart() {
+  Object.assign(S, {
+    sessionId: null, pendingNext: null, localHistory: [],
+    answered: 0, abilityLevel: 5, abilityJlpt: 'N3', awaitingNext: false,
+  });
+  document.getElementById('user-input').value = '';
+  const btn = document.getElementById('start-btn');
+  btn.disabled = false;
+  document.getElementById('start-label').textContent = 'Start Assessment';
+  document.getElementById('start-icon').classList.remove('hidden');
+  spin('start-spinner', false);
+  showPage('page-start');
+}
+
+// Enter key on start page
+document.getElementById('user-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') startSession();
+});
+</script>
+</body>
+</html>
