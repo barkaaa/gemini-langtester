@@ -11,6 +11,8 @@ from the local Pipeline (measured), NEVER from the LLM self-assessment.
 """
 
 import uuid
+import os
+import random
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -28,6 +30,7 @@ _sessions: dict[str, dict] = {}
 
 MAX_QUESTIONS = 8
 MIN_TO_CONVERGE = 5
+CALIBRATION_ATTEMPTS = max(1, int(os.environ.get("CALIBRATION_ATTEMPTS", "1")))
 
 
 @asynccontextmanager
@@ -83,13 +86,14 @@ async def _generate_calibrated(
 ) -> dict:
     """
     Generate a question and verify its measured difficulty is within tolerance
-    of target_level.  Retries up to 5 times, widening tolerance each attempt.
+    of target_level. Retries are intentionally low for local responsiveness.
     Always returns a question (marked approx=True if calibration never converged).
     """
     tolerance = 1
     best: dict | None = None
+    last_error: Exception | None = None
 
-    for attempt in range(5):
+    for attempt in range(CALIBRATION_ATTEMPTS):
         try:
             q = await ask_question_master(
                 target_level, question_type, avoid_topics=avoid_topics
@@ -107,19 +111,22 @@ async def _generate_calibrated(
 
             if abs(m["level"] - target_level) <= tolerance:
                 q["approx"] = False
-                return q
+                return _shuffle_options(q)
 
             best = q
             tolerance += 1
 
-        except Exception:
-            pass  # retry
+        except Exception as exc:
+            last_error = exc
 
     if best:
         best["approx"] = True
-        return best
+        return _shuffle_options(best)
 
-    raise HTTPException(status_code=500, detail="Failed to generate question after 5 attempts")
+    detail = f"Failed to generate question after {CALIBRATION_ATTEMPTS} attempts"
+    if last_error:
+        detail = f"{detail}: {last_error}"
+    raise HTTPException(status_code=503, detail=detail)
 
 
 # ── Session helpers ───────────────────────────────────────────────────────────
@@ -140,9 +147,74 @@ def _compute_metrics(history: list) -> dict:
     }
 
 
-def _pending_from_question(q: dict) -> dict:
+def _level_to_jlpt(level: int) -> str:
+    if level <= 2:
+        return "N5"
+    if level <= 4:
+        return "N4"
+    if level <= 6:
+        return "N3"
+    if level <= 8:
+        return "N2"
+    return "N1"
+
+
+def _interim_diagnosis(history: list, metrics: dict, current_level: int) -> dict:
+    recent = history[-3:]
+    recent_accuracy = (
+        sum(1 for h in recent if h["correct"]) / len(recent)
+        if recent else metrics["accuracy"]
+    )
+    next_level = current_level
+    if recent_accuracy >= 0.8:
+        next_level += 1
+    elif recent_accuracy <= 0.35:
+        next_level -= 1
+    next_level = max(1, min(10, next_level))
+
+    converged = False
+    if len(history) >= MIN_TO_CONVERGE:
+        levels = [h["measured_level"] for h in history[-3:]]
+        converged = max(levels) - min(levels) <= 1 and 0.45 <= recent_accuracy <= 0.85
+
     return {
-        "answer_index": q["answer_index"],
+        "ability_jlpt": _level_to_jlpt(current_level),
+        "ability_level": current_level,
+        "confidence": "medium" if len(history) >= 3 else "low",
+        "weak_areas": [],
+        "reader_type": "calibrating",
+        "deep_comprehension": "",
+        "advice": "",
+        "next_target_jlpt": _level_to_jlpt(next_level),
+        "next_target_level": next_level,
+        "converged": converged,
+    }
+
+
+def _shuffle_options(q: dict) -> dict:
+    options = q.get("options", [])
+    answer_index = q.get("answer_index", 0)
+    if not isinstance(options, list) or len(options) != 4:
+        raise ValueError("Question must contain exactly 4 options")
+    if not isinstance(answer_index, int) or not 0 <= answer_index < len(options):
+        raise ValueError("Question answer_index is out of range")
+
+    indexed = list(enumerate(options))
+    random.shuffle(indexed)
+    q["options"] = [option for _, option in indexed]
+    q["answer_index"] = next(
+        new_index for new_index, (old_index, _) in enumerate(indexed)
+        if old_index == answer_index
+    )
+    return q
+
+
+def _pending_from_question(q: dict) -> dict:
+    answer_index = q["answer_index"]
+    options = q.get("options", [])
+    return {
+        "answer_index": answer_index,
+        "correct_answer": options[answer_index] if 0 <= answer_index < len(options) else "",
         "measured_level": q.get("measured_level", 5),
         "measured_jlpt": q.get("measured_jlpt", "N3"),
         "char_count": q.get("passage_char_count", len(q.get("passage", ""))),
@@ -224,6 +296,12 @@ async def answer(body: AnswerRequest):
 
     # ── 1. Deterministic judgement — NO LLM ──────────────────────────────────
     correct = body.answer_index == pending["answer_index"]
+    answer_feedback = {
+        "correct": correct,
+        "correct_answer_index": pending["answer_index"],
+        "correct_answer": pending.get("correct_answer", ""),
+        "elapsed_ms": body.elapsed_ms,
+    }
 
     # ── 2. Record history with MEASURED difficulty ────────────────────────────
     entry = {
@@ -240,18 +318,19 @@ async def answer(body: AnswerRequest):
     # ── 3. Deterministic metrics ──────────────────────────────────────────────
     metrics = _compute_metrics(session["history"])
 
-    # ── 4. Diagnosis agent ────────────────────────────────────────────────────
-    diagnosis = await ask_diagnosis_master(session["history"], metrics)
-
-    # ── 5. Termination check ──────────────────────────────────────────────────
+    # ── 4. Fast local diagnosis for responsiveness ────────────────────────────
     answered = metrics["answered"]
+    diagnosis = _interim_diagnosis(
+        session["history"], metrics, session["current_target_level"]
+    )
     converged = bool(diagnosis.get("converged", False))
     done = answered >= MIN_TO_CONVERGE and (converged or answered >= MAX_QUESTIONS)
 
     if done:
-        return {"correct": correct, "diagnosis": diagnosis, "done": True}
+        diagnosis = await ask_diagnosis_master(session["history"], metrics)
+        return {**answer_feedback, "diagnosis": diagnosis, "done": True}
 
-    # ── 6. Next question ──────────────────────────────────────────────────────
+    # ── 5. Next question ──────────────────────────────────────────────────────
     next_level = int(diagnosis.get("next_target_level", session["current_target_level"]))
     next_level = max(1, min(10, next_level))
     session["current_target_level"] = next_level
@@ -263,7 +342,7 @@ async def answer(body: AnswerRequest):
     session["pending"] = _pending_from_question(nq)
 
     return {
-        "correct": correct,
+        **answer_feedback,
         "diagnosis": diagnosis,
         "done": False,
         "next_question": _public_question(nq),

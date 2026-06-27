@@ -7,12 +7,19 @@ import json
 import os
 import re
 import ssl
+import asyncio
 
 import httpx
+from dotenv import load_dotenv
 
+load_dotenv()
+
+GEMINI_PROVIDER = os.environ.get("GEMINI_PROVIDER", "google_ai").lower()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
-_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+GOOGLE_CLOUD_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "asia-northeast1")
+_GOOGLE_AI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 # Use project CA bundle when running locally behind the proxy; fall back to
 # system trust store for Cloud Run.
@@ -93,6 +100,84 @@ DIAGNOSIS_MASTER_SYSTEM = """\
 - 只输出 JSON。
 """
 
+# Override the legacy garbled prompts with short, explicit instructions.
+QUESTION_MASTER_SYSTEM = """\
+You generate Japanese reading-comprehension questions for JLPT-style adaptive testing.
+Return strict JSON only. No markdown, no comments.
+
+Input JSON:
+{
+  "target_jlpt": "N3",
+  "target_level": 5,
+  "focus_grammar": [],
+  "question_type": "detail|inference",
+  "avoid_topics": []
+}
+
+Output JSON schema:
+{
+  "passage": "Japanese passage, 140-240 Japanese characters",
+  "passage_char_count": 180,
+  "question": "Japanese question",
+  "options": ["option A", "option B", "option C", "option D"],
+  "answer_index": "integer 0-3",
+  "question_type": "detail|inference",
+  "self_assessed_jlpt": "N5|N4|N3|N2|N1",
+  "self_assessed_level": 1,
+  "tested_grammar": ["grammar point"]
+}
+
+Rules:
+- Match target_level: 1-2=N5, 3-4=N4, 5-6=N3, 7-8=N2, 9-10=N1.
+- detail questions test explicit facts. inference questions test implication, intent, or conclusion.
+- Exactly one correct option. Distractors must be plausible but clearly wrong from the passage.
+- Vary answer_index naturally across 0, 1, 2, and 3. Do not always make option A correct.
+- The correct option must not copy a sentence or phrase directly from the passage.
+- All options, especially the correct answer, must paraphrase the passage in different wording while preserving meaning.
+- Avoid romaji. Keep all user-facing question content in Japanese.
+- Use ordinary, non-sensitive topics such as school, work, travel, public notices, habits, technology, or culture.
+"""
+
+DIAGNOSIS_MASTER_SYSTEM = """\
+You diagnose Japanese reading ability from adaptive test history.
+Return strict JSON only. No markdown, no comments.
+
+Input JSON:
+{
+  "history": [
+    {
+      "measured_jlpt": "N3",
+      "measured_level": 5,
+      "correct": true,
+      "elapsed_ms": 30000,
+      "char_count": 180,
+      "question_type": "detail",
+      "tested_grammar": []
+    }
+  ],
+  "metrics": { "accuracy": 0.75, "avg_wpm": 360, "answered": 8 }
+}
+
+Output JSON schema:
+{
+  "ability_jlpt": "N5|N4|N3|N2|N1",
+  "ability_level": 1,
+  "confidence": "low|medium|high",
+  "weak_areas": ["specific reading or grammar weakness"],
+  "reader_type": "short label",
+  "deep_comprehension": "one concise diagnosis sentence",
+  "advice": "one concise actionable study recommendation",
+  "next_target_jlpt": "N5|N4|N3|N2|N1",
+  "next_target_level": 1,
+  "converged": true
+}
+
+Rules:
+- Trust measured_level, not the model's self assessment.
+- Use accuracy, speed, question type, and tested grammar to estimate ability.
+- Be concrete and useful. Keep Japanese-learning advice concise.
+"""
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
@@ -103,38 +188,114 @@ def _strip_fence(text: str) -> str:
     return text.strip()
 
 
-async def _call_gemini(system: str, user_msg: str) -> str:
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY environment variable is not set")
-
-    url = f"{_BASE_URL}/{GEMINI_MODEL}:generateContent"
-    payload = {
-        "system_instruction": {"parts": [{"text": system}]},
+def _build_payload(system: str, user_msg: str, *, vertex: bool) -> dict:
+    system_key = "systemInstruction" if vertex else "system_instruction"
+    return {
+        system_key: {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
         "generationConfig": {
             "responseMimeType": "application/json",
             "temperature": 0.7,
+            "maxOutputTokens": 4096,
         },
     }
+
+
+async def _get_vertex_access_token() -> str:
+    def load_token() -> str:
+        import google.auth
+        from google.auth.transport.requests import Request
+
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        credentials.refresh(Request())
+        return credentials.token
+
+    token = await asyncio.to_thread(load_token)
+    if not token:
+        raise RuntimeError("Could not obtain Google Cloud access token")
+    return token
+
+
+async def _post_json(url: str, payload: dict, headers: dict) -> dict:
+    async with httpx.AsyncClient(verify=_SSL_VERIFY, timeout=45.0) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = resp.text[:500].replace("\n", " ")
+            raise RuntimeError(
+                f"Gemini API returned HTTP {resp.status_code}: {detail}"
+            ) from exc
+        return resp.json()
+
+
+async def _call_google_ai(system: str, user_msg: str) -> str:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY environment variable is not set")
+
+    url = f"{_GOOGLE_AI_BASE_URL}/{GEMINI_MODEL}:generateContent"
+    payload = _build_payload(system, user_msg, vertex=False)
     headers = {
         "Content-Type": "application/json",
         "X-goog-api-key": GEMINI_API_KEY,
     }
-    async with httpx.AsyncClient(verify=_SSL_VERIFY, timeout=45.0) as client:
-        resp = await client.post(url, json=payload, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"]
+    data = await _post_json(url, payload, headers)
+    return _extract_text(data)
+
+
+async def _call_vertex_ai(system: str, user_msg: str) -> str:
+    if not GOOGLE_CLOUD_PROJECT:
+        raise RuntimeError("GOOGLE_CLOUD_PROJECT environment variable is not set")
+
+    if GOOGLE_CLOUD_LOCATION == "global":
+        base_url = "https://aiplatform.googleapis.com/v1"
+    else:
+        base_url = f"https://{GOOGLE_CLOUD_LOCATION}-aiplatform.googleapis.com/v1"
+    url = (
+        f"{base_url}/projects/{GOOGLE_CLOUD_PROJECT}/"
+        f"locations/{GOOGLE_CLOUD_LOCATION}/publishers/google/models/"
+        f"{GEMINI_MODEL}:generateContent"
+    )
+    payload = _build_payload(system, user_msg, vertex=True)
+    token = await _get_vertex_access_token()
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    data = await _post_json(url, payload, headers)
+    return _extract_text(data)
+
+
+def _extract_text(data: dict) -> str:
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError) as exc:
+        brief = json.dumps(data, ensure_ascii=False)[:800]
+        raise RuntimeError(f"Gemini API returned no text parts: {brief}") from exc
+
+
+async def _call_gemini(system: str, user_msg: str) -> str:
+    if GEMINI_PROVIDER in {"vertex", "vertex_ai", "google_cloud"}:
+        return await _call_vertex_ai(system, user_msg)
+    if GEMINI_PROVIDER in {"google_ai", "ai_studio", "api_key"}:
+        return await _call_google_ai(system, user_msg)
+    raise RuntimeError(
+        "GEMINI_PROVIDER must be one of: google_ai, ai_studio, vertex, vertex_ai"
+    )
 
 
 async def _call_with_retry(system: str, user_msg: str) -> dict:
     last_err: Exception | None = None
-    for _ in range(3):
+    for attempt in range(3):
         try:
             raw = await _call_gemini(system, user_msg)
             return json.loads(_strip_fence(raw))
         except Exception as e:
             last_err = e
+            if attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
     raise last_err  # type: ignore[misc]
 
 

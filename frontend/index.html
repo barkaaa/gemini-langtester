@@ -281,6 +281,7 @@ tailwind.config = {
           <div class="flex items-center gap-2 mb-4">
             <span id="q-num-tag" class="bg-surface-variant text-on-surface-variant text-xs font-semibold px-2 py-1 rounded">Q1</span>
             <span id="q-type-tag" class="text-xs font-semibold px-2 py-1 rounded border border-primary/40 text-primary">detail</span>
+            <span id="question-timer" class="bg-surface-container text-on-surface-variant text-xs font-semibold px-2 py-1 rounded data-mono">00:00</span>
           </div>
 
           <p id="passage" class="text-base md:text-lg text-on-surface leading-loose tracking-wide font-jp mb-6 pb-6 border-b border-surface-container-high whitespace-pre-wrap"></p>
@@ -429,6 +430,7 @@ const S = {
   answered: 0,
   localHistory: [],   // { correct, question_type }
   awaitingNext: false,
+  timerId: null,
 };
 
 // ── Routing ───────────────────────────────────────────────────────────────
@@ -450,6 +452,32 @@ function toast(msg) {
 // ── Spinner ───────────────────────────────────────────────────────────────
 function spin(id, on) {
   document.getElementById(id).classList.toggle('hidden', !on);
+}
+
+function formatElapsed(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const min = String(Math.floor(total / 60)).padStart(2, '0');
+  const sec = String(total % 60).padStart(2, '0');
+  return `${min}:${sec}`;
+}
+
+function startQuestionTimer() {
+  if (S.timerId) clearInterval(S.timerId);
+  const timer = document.getElementById('question-timer');
+  if (timer) timer.textContent = '00:00';
+  S.timerId = setInterval(() => {
+    if (!S.startMs || !timer) return;
+    timer.textContent = formatElapsed(Date.now() - S.startMs);
+  }, 500);
+}
+
+function stopQuestionTimer(elapsed) {
+  if (S.timerId) {
+    clearInterval(S.timerId);
+    S.timerId = null;
+  }
+  const timer = document.getElementById('question-timer');
+  if (timer) timer.textContent = formatElapsed(elapsed);
 }
 
 // ── Input chip helper ─────────────────────────────────────────────────────
@@ -519,6 +547,7 @@ function commitDot(correct) {
 function renderQuestion(q, diff, qNum) {
   S.startMs      = Date.now();
   S.awaitingNext = false;
+  startQuestionTimer();
 
   updateDiffBadges(diff);
 
@@ -561,9 +590,16 @@ async function selectOption(idx) {
   if (S.awaitingNext) return;
   S.awaitingNext = true;
   const elapsed = Date.now() - (S.startMs || Date.now());
+  stopQuestionTimer(elapsed);
 
   // Disable all options
   document.querySelectorAll('.opt-btn').forEach(b => { b.disabled = true; });
+  const opts = document.querySelectorAll('.opt-btn');
+  opts[idx].className = 'opt-btn w-full text-left p-4 md:p-5 rounded-xl border-2 border-primary bg-blue-50 flex items-start gap-3';
+  const fbPending = document.getElementById('feedback-bar');
+  fbPending.className = 'flex items-center gap-3 px-5 py-3 rounded-xl border text-sm font-bold bg-blue-50 border-primary text-primary';
+  document.getElementById('feedback-icon').textContent = 'hourglass_top';
+  document.getElementById('feedback-text').textContent = 'Submitted. Generating the next question...';
   spin('quiz-spinner', true);
 
   let data;
@@ -585,8 +621,10 @@ async function selectOption(idx) {
   spin('quiz-spinner', false);
 
   const correct = data.correct;
-  const opts = document.querySelectorAll('.opt-btn');
   const letters = ['A','B','C','D'];
+  const correctIdx = data.correct_answer_index;
+  const correctLetter = letters[correctIdx] || '';
+  const elapsedLabel = formatElapsed(data.elapsed_ms || elapsed);
 
   // Colour the selected option
   opts[idx].className = 'opt-btn w-full text-left p-4 md:p-5 rounded-xl border-2 flex items-start gap-3 ' +
@@ -597,7 +635,15 @@ async function selectOption(idx) {
 
   // Dim others
   opts.forEach((b, i) => {
-    if (i !== idx) b.classList.add('opacity-40');
+    if (!correct && i === correctIdx) {
+      b.className = 'opt-btn w-full text-left p-4 md:p-5 rounded-xl border-2 border-success bg-green-50 flex items-start gap-3';
+      const letter = b.querySelector('.opt-letter');
+      if (letter) {
+        letter.className = 'opt-letter w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold data-mono shrink-0 mt-0.5 transition-all bg-success text-white';
+      }
+    } else if (i !== idx) {
+      b.classList.add('opacity-40');
+    }
   });
 
   // Feedback bar
@@ -606,11 +652,11 @@ async function selectOption(idx) {
   if (correct) {
     fb.className = 'flex items-center gap-3 px-5 py-3 rounded-xl border text-sm font-bold bg-green-50 border-success text-success';
     document.getElementById('feedback-icon').textContent = 'check_circle';
-    document.getElementById('feedback-text').textContent = 'Correct!';
+    document.getElementById('feedback-text').textContent = `Correct! Time: ${elapsedLabel}`;
   } else {
     fb.className = 'flex items-center gap-3 px-5 py-3 rounded-xl border text-sm font-bold bg-red-50 border-error text-error';
     document.getElementById('feedback-icon').textContent = 'cancel';
-    document.getElementById('feedback-text').textContent = 'Incorrect — engine difficulty correction applied.';
+    document.getElementById('feedback-text').textContent = `Incorrect. Correct answer: ${correctLetter}. ${data.correct_answer || ''} Time: ${elapsedLabel}`;
   }
 
   // Update gauge from diagnosis
@@ -647,7 +693,7 @@ async function startSession() {
 
   const btn = document.getElementById('start-btn');
   btn.disabled = true;
-  document.getElementById('start-label').textContent = 'Initializing…';
+  document.getElementById('start-label').textContent = 'Generating question...';
   document.getElementById('start-icon').classList.add('hidden');
   spin('start-spinner', true);
 
@@ -658,7 +704,14 @@ async function startSession() {
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ user_input: input }),
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`;
+      try {
+        const err = await r.json();
+        msg = err.detail || msg;
+      } catch (_) {}
+      throw new Error(msg);
+    }
     data = await r.json();
   } catch(e) {
     spin('start-spinner', false);
@@ -759,9 +812,11 @@ function showResults(diag) {
 
 // ── Restart ───────────────────────────────────────────────────────────────
 function restart() {
+  if (S.timerId) clearInterval(S.timerId);
   Object.assign(S, {
     sessionId: null, pendingNext: null, localHistory: [],
     answered: 0, abilityLevel: 5, abilityJlpt: 'N3', awaitingNext: false,
+    timerId: null,
   });
   document.getElementById('user-input').value = '';
   const btn = document.getElementById('start-btn');
